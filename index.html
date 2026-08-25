@@ -199,10 +199,7 @@ const SAMPLE = {
     { asset:"MSFT",  sleeve:"alpha", units:0.24,  avg_cost:429.0, price:416.5 },
     { asset:"ETH",   sleeve:"asym",  units:0.024, avg_cost:3958,  price:3750 }
   ],
-  snapshots: [
-    { date:"2026-01", value:520,  contributions:500,  fx:57.9 },
-    { date:"2026-02", value:absReplace, contributions:0, fx:0 } // placeholder removed below
-  ],
+  snapshots: [],
   watchlist: [
     { ticker:"AAPL", target_entry:"205.00", note:"waiting for entry" },
     { ticker:"AMZN", target_entry:"170.00", note:"waiting for entry" }
@@ -375,10 +372,7 @@ function render(m,live,error){
       <div class="big">${goal? goalPct.toFixed(0)+"%":"—"}</div>
       <div class="hint">${goal? usdShort(m.total)+" of "+usdShort(goal) : "Set goal_amount in Config."}</div></div>`;
 
-  // watchlist
-  document.getElementById("watch").innerHTML=(m.snaps,SLEEVES, (window.__watch||[])).length? "" : "";
-  const wl=(m.__wl)||[];
-  // (watchlist wired below in start())
+  // watchlist is rendered in start() with the freshest data
 
   // foot
   document.getElementById("foot").innerHTML=
