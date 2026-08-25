@@ -246,6 +246,8 @@ function rowsToObjects(rows){
   const head=rows[0].map(h=>h.trim().toLowerCase());
   return rows.slice(1).map(r=>{ const o={}; head.forEach((h,i)=>o[h]=(r[i]??"").trim()); return o; });
 }
+/* strip $ , spaces etc. so "$3,958.00" -> 3958 */
+const num = v => { const n=parseFloat(String(v??"").replace(/[^0-9.\-]/g,"")); return isFinite(n)?n:0; };
 const sheetURL = (tab)=>`https://docs.google.com/spreadsheets/d/${CONFIG.SHEET_ID}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent(tab)}`;
 async function fetchTab(tab){
   const res=await fetch(sheetURL(tab));
@@ -264,8 +266,8 @@ async function load(){
     const cfg={}; c.forEach(r=>{ const k=(r.key||r.setting||"").toLowerCase(); if(k) cfg[k]=r.value; });
     return { data:{
       holdings:h.map(r=>({asset:r.asset, sleeve:(r.sleeve||"").toLowerCase(),
-        units:+r.units||0, avg_cost:+r.avg_cost||0, price:+r.price||0})),
-      snapshots:s.map(r=>({date:r.date, value:+r.value||0, contributions:+r.contributions||0, fx:+r.fx||0})),
+        units:num(r.units), avg_cost:num(r.avg_cost), price:num(r.price)})),
+      snapshots:s.map(r=>({date:r.date, value:num(r.value), contributions:num(r.contributions), fx:num(r.fx)})),
       watchlist:w.map(r=>({ticker:r.ticker, target_entry:r.target_entry, note:r.note})),
       config:cfg
     }, live:true };
@@ -284,9 +286,9 @@ function compute(d){
   const total=h.reduce((a,x)=>a+x.value,0);
   const invested=h.reduce((a,x)=>a+x.invested,0);
   const snaps=d.snapshots.filter(s=>s.value>0);
-  const fx=(snaps.length?snaps[snaps.length-1].fx:0)|| (d.config.fx?+d.config.fx:0) || 58.5;
+  const fx=(snaps.length?snaps[snaps.length-1].fx:0) || num(d.config.fx) || 58.5;
   const cfg=d.config;
-  const targets={beta:+cfg.target_beta||70, alpha:+cfg.target_alpha||20, asym:+cfg.target_asym||10};
+  const targets={beta:num(cfg.target_beta)||70, alpha:num(cfg.target_alpha)||20, asym:num(cfg.target_asym)||10};
   const sleeves=SLEEVES.map(s=>{
     const val=h.filter(x=>x.sleeve===s.key).reduce((a,x)=>a+x.value,0);
     const actual= total? val/total*100 : 0;
@@ -357,10 +359,10 @@ function render(m,live,error){
 
   // metrics (income-free: contribution · projection · goal)
   const c=m.cfg;
-  const contrib=+c.monthly_contribution||0;
-  const rate=+c.projection_rate||0.08, years=+c.projection_years||5;
+  const contrib=num(c.monthly_contribution);
+  const rate=num(c.projection_rate)||0.08, years=num(c.projection_years)||5;
   const fv=m.total*Math.pow(1+rate,years)+ (contrib? contrib*((Math.pow(1+rate/12,12*years)-1)/(rate/12)) : 0);
-  const goal=+c.goal_amount||0;
+  const goal=num(c.goal_amount);
   const goalPct= goal? Math.min(100, m.total/goal*100) : 0;
   document.getElementById("metrics").innerHTML=`
     <div class="card metric"><div class="lab">Monthly contribution</div>
@@ -413,7 +415,7 @@ function drawChart(snaps){
   // watchlist render (kept here so it uses freshest data)
   document.getElementById("watch").innerHTML=(data.watchlist||[]).map(w=>`
     <li><span class="tkr">${w.ticker||""}</span>
-    <span class="want">${w.target_entry?("wants entry below $"+w.target_entry):(w.note||"")}</span></li>`).join("")
+    <span class="want">${w.target_entry?("wants entry below $"+num(w.target_entry).toFixed(2)):(w.note||"")}</span></li>`).join("")
     || `<li><span class="muted">Add rows to the Watchlist tab.</span></li>`;
 })();
 </script>
