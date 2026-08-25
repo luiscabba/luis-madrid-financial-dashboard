@@ -221,35 +221,43 @@ SAMPLE.snapshots = [
   { date:"2026-07", value:1010, contributions:994,  fx:58.5 }
 ];
 
-/* ---- tiny CSV parser (handles quotes/commas) ---- */
-function parseCSV(text){
-  const rows=[]; let row=[], cur="", q=false;
-  for(let i=0;i<text.length;i++){
-    const c=text[i];
-    if(q){
-      if(c==='"'){ if(text[i+1]==='"'){cur+='"';i++;} else q=false; } else cur+=c;
-    } else {
-      if(c==='"') q=true;
-      else if(c===","){ row.push(cur); cur=""; }
-      else if(c==="\n"){ row.push(cur); rows.push(row); row=[]; cur=""; }
-      else if(c==="\r"){} else cur+=c;
-    }
-  }
-  if(cur.length||row.length){ row.push(cur); rows.push(row); }
-  return rows.filter(r=>r.some(x=>x!==""));
-}
-function rowsToObjects(rows){
-  if(!rows.length) return [];
-  const head=rows[0].map(h=>h.trim().toLowerCase());
-  return rows.slice(1).map(r=>{ const o={}; head.forEach((h,i)=>o[h]=(r[i]??"").trim()); return o; });
-}
 /* strip $ , spaces etc. so "$3,958.00" -> 3958 */
 const num = v => { const n=parseFloat(String(v??"").replace(/[^0-9.\-]/g,"")); return isFinite(n)?n:0; };
-const sheetURL = (tab)=>`https://docs.google.com/spreadsheets/d/${CONFIG.SHEET_ID}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent(tab)}`;
-async function fetchTab(tab){
-  const res=await fetch(sheetURL(tab));
-  if(!res.ok) throw new Error("fetch failed "+tab);
-  return rowsToObjects(parseCSV(await res.text()));
+
+/* gviz date value "Date(2026,5,1)" -> "2026-06" */
+function gdate(v){
+  if(typeof v==="string" && v.indexOf("Date(")===0){
+    const p=v.slice(5,-1).split(",").map(Number);
+    return `${p[0]}-${String((p[1]||0)+1).padStart(2,"0")}`;
+  }
+  return String(v??"");
+}
+
+/* Load a tab via gviz JSONP (injected script element, so no CORS wall). Returns array of row-objects. */
+function loadTab(tab){
+  return new Promise((resolve,reject)=>{
+    const cb="__gv"+Math.random().toString(36).slice(2);
+    const url=`https://docs.google.com/spreadsheets/d/${CONFIG.SHEET_ID}/gviz/tq`
+      +`?tqx=out:json;responseHandler:${cb}&headers=1&sheet=${encodeURIComponent(tab)}`;
+    const s=document.createElement("script");
+    let done=false;
+    const cleanup=()=>{ try{delete window[cb];}catch(e){window[cb]=undefined;} s.remove(); };
+    const timer=setTimeout(()=>{ if(!done){done=true;cleanup();reject(new Error("timeout "+tab));} },9000);
+    window[cb]=(resp)=>{
+      if(done) return; done=true; clearTimeout(timer); cleanup();
+      try{
+        const t=resp.table, cols=t.cols.map(c=>(c.label||c.id||"").trim().toLowerCase());
+        const rows=(t.rows||[]).map(r=>{
+          const o={}; (r.c||[]).forEach((cell,i)=>{
+            o[cols[i]] = cell? (cell.v!=null? cell.v : (cell.f!=null? cell.f : "")) : "";
+          }); return o;
+        });
+        resolve(rows);
+      }catch(e){ reject(e); }
+    };
+    s.onerror=()=>{ if(!done){done=true;clearTimeout(timer);cleanup();reject(new Error("load "+tab));} };
+    s.src=url; document.head.appendChild(s);
+  });
 }
 
 /* ---- load data (sheet or sample) ---- */
@@ -257,15 +265,15 @@ async function load(){
   if(!CONFIG.SHEET_ID) return { data:normalizeSample(), live:false };
   try{
     const [h,s,w,c]=await Promise.all([
-      fetchTab(CONFIG.TABS.holdings), fetchTab(CONFIG.TABS.snapshots),
-      fetchTab(CONFIG.TABS.watchlist), fetchTab(CONFIG.TABS.config)
+      loadTab(CONFIG.TABS.holdings), loadTab(CONFIG.TABS.snapshots),
+      loadTab(CONFIG.TABS.watchlist), loadTab(CONFIG.TABS.config)
     ]);
-    const cfg={}; c.forEach(r=>{ const k=(r.key||r.setting||"").toLowerCase(); if(k) cfg[k]=r.value; });
+    const cfg={}; c.forEach(r=>{ const k=String(r.key||r.setting||"").trim().toLowerCase(); if(k) cfg[k]=r.value; });
     return { data:{
-      holdings:h.map(r=>({asset:r.asset, sleeve:(r.sleeve||"").toLowerCase(),
+      holdings:h.filter(r=>r.asset).map(r=>({asset:r.asset, sleeve:String(r.sleeve||"").toLowerCase(),
         units:num(r.units), avg_cost:num(r.avg_cost), price:num(r.price)})),
-      snapshots:s.map(r=>({date:r.date, value:num(r.value), contributions:num(r.contributions), fx:num(r.fx)})),
-      watchlist:w.map(r=>({ticker:r.ticker, target_entry:r.target_entry, note:r.note})),
+      snapshots:s.map(r=>({date:gdate(r.date), value:num(r.value), contributions:num(r.contributions), fx:num(r.fx)})),
+      watchlist:w.filter(r=>r.ticker).map(r=>({ticker:r.ticker, target_entry:r.target_entry, note:r.note})),
       config:cfg
     }, live:true };
   }catch(e){ console.warn("Falling back to sample:",e); return { data:normalizeSample(), live:false, error:true }; }
