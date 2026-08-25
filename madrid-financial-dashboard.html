@@ -1,0 +1,421 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Portfolio</title>
+<style>
+  /* ===========================================================
+     CONSOLE — portfolio dashboard
+     Data source: a published Google Sheet (see CONFIG in <script>)
+     Falls back to sample data until you connect your sheet.
+     =========================================================== */
+  *,*::before,*::after{box-sizing:border-box}
+  :root{
+    --bg:#0E141B; --card:#141c26; --bar:rgba(14,20,27,.85);
+    --ink:#e8eef5; --muted:#7f90a3; --hair:#223041; --chip:#1b2431;
+    --accent:#38BDF8; --on-accent:#05141f;
+    --up:#4ade80; --down:#fb7185; --radius:10px;
+    --c-beta:#38BDF8; --c-alpha:#F5A623; --c-asym:#A78BFA;
+    --mono:ui-monospace,"SF Mono","JetBrains Mono","Roboto Mono",Menlo,monospace;
+  }
+  body{
+    margin:0; min-height:100vh; font-family:var(--mono); color:var(--ink);
+    background:radial-gradient(900px 500px at 80% -10%,rgba(56,189,248,.08),transparent 60%),var(--bg);
+  }
+  :focus-visible{outline:2px solid var(--accent); outline-offset:3px; border-radius:4px}
+  a{color:var(--accent)}
+  .wrap{max-width:940px; margin:0 auto; padding:0 18px 80px}
+  .grid{display:grid; gap:12px}
+  @media(min-width:720px){.cols-2{grid-template-columns:1fr 1fr}.cols-3{grid-template-columns:1fr 1fr 1fr}}
+  .pos{color:var(--up)} .neg{color:var(--down)} .muted{color:var(--muted)}
+
+  .topbar{position:sticky; top:0; z-index:20; display:flex; align-items:center; justify-content:space-between;
+    gap:12px; padding:12px 18px; backdrop-filter:blur(10px); border-bottom:1px solid var(--hair); background:var(--bar)}
+  .brand{display:flex; align-items:center; gap:10px; font-weight:600}
+  .brand .dot{width:10px;height:10px;border-radius:50%;background:var(--accent)}
+  .status{font-size:11px; letter-spacing:.04em; text-transform:uppercase; color:var(--muted);
+    border:1px solid var(--hair); padding:4px 10px; border-radius:999px}
+  .status.live{color:var(--up); border-color:color-mix(in srgb,var(--up) 40%,var(--hair))}
+
+  .banner{margin:16px 0 0; padding:12px 14px; border-radius:var(--radius); font-size:13px; line-height:1.55;
+    border:1px solid color-mix(in srgb,var(--accent) 40%,var(--hair)); background:color-mix(in srgb,var(--accent) 8%,transparent)}
+  .banner b{color:var(--accent)}
+  .banner.hidden{display:none}
+
+  .eyebrow{font-size:12px; letter-spacing:.12em; text-transform:uppercase; color:var(--muted); margin:30px 0 10px}
+  .card{background:var(--card); border:1px solid var(--hair); border-radius:var(--radius); padding:16px}
+
+  /* hero */
+  .hero{padding-top:26px}
+  .hero .k{font-size:11px; letter-spacing:.08em; text-transform:uppercase; color:var(--muted)}
+  .hero .total{font-size:clamp(40px,10vw,66px); font-weight:600; letter-spacing:-.03em; line-height:1}
+  .cursor{display:inline-block;width:.5ch;background:var(--accent);animation:blink 1.1s steps(1) infinite}
+  @keyframes blink{50%{opacity:0}}
+  .stats{display:grid; grid-template-columns:repeat(2,1fr); gap:1px; margin-top:18px; background:var(--hair);
+    border:1px solid var(--hair); border-radius:var(--radius); overflow:hidden}
+  @media(min-width:620px){.stats{grid-template-columns:repeat(4,1fr)}}
+  .stats>div{background:var(--card); padding:12px 14px}
+  .stats .kk{font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:.08em}
+  .stats .vv{font-size:18px; font-weight:600; margin-top:4px}
+
+  /* allocation bays */
+  .bays{grid-template-columns:repeat(3,1fr); gap:12px}
+  .bay{border:1px solid var(--hair); border-radius:var(--radius); padding:14px; background:var(--card)}
+  .bay .tag{font-size:11px; letter-spacing:.06em; text-transform:uppercase; color:var(--sl); font-weight:700}
+  .bay .gauge{height:120px; margin:12px 0; border-radius:6px; background:var(--chip); position:relative; overflow:hidden}
+  .bay .gfill{position:absolute; left:0; right:0; bottom:0;
+    background:linear-gradient(0deg,var(--sl),color-mix(in srgb,var(--sl) 55%,transparent));
+    transition:height 1s cubic-bezier(.2,.7,.2,1)}
+  .bay .gtarget{position:absolute; left:0; right:0; height:2px; background:var(--ink)}
+  .bay .gtarget span{position:absolute; right:4px; top:-14px; font-size:10px; color:var(--muted)}
+  .bay .pct{font-size:22px; font-weight:600}
+  .bay .sub{font-size:12px; color:var(--muted)}
+  .beta{--sl:var(--c-beta)} .alpha{--sl:var(--c-alpha)} .asym{--sl:var(--c-asym)}
+  .rebalance{margin-top:12px; padding:12px 14px; border-radius:var(--radius); font-size:13px;
+    border:1px dashed var(--accent); background:color-mix(in srgb,var(--accent) 8%,transparent)}
+  .rebalance b{color:var(--accent)}
+
+  /* tables */
+  .table-scroll{overflow-x:auto}
+  table{width:100%; border-collapse:collapse}
+  th,td{text-align:right; padding:11px 10px; border-bottom:1px solid var(--hair); font-size:14px; white-space:nowrap}
+  th{font-size:11px; letter-spacing:.06em; text-transform:uppercase; color:var(--muted); font-weight:600}
+  th:first-child,td:first-child{text-align:left}
+  .tkr{font-weight:700}
+  .dot-sl{display:inline-block; width:8px; height:8px; border-radius:2px; margin-right:8px; vertical-align:middle}
+
+  /* growth */
+  .growth svg{width:100%; height:190px; display:block}
+  .legend{display:flex; gap:16px; margin-top:10px; font-size:13px; flex-wrap:wrap}
+  .legend span{display:inline-flex; align-items:center; gap:7px; color:var(--muted)}
+  .legend i{width:12px; height:3px; border-radius:2px}
+
+  /* metrics */
+  .metric .lab{font-size:12px; color:var(--muted); text-transform:uppercase; letter-spacing:.06em; margin-bottom:6px}
+  .metric .big{font-size:26px; font-weight:700; letter-spacing:-.02em}
+  .metric .hint{font-size:12px; color:var(--muted); margin-top:6px; line-height:1.5}
+
+  /* extras */
+  ul.plain{list-style:none; margin:0; padding:0}
+  .watch li{display:flex; justify-content:space-between; gap:10px; padding:9px 0; border-bottom:1px solid var(--hair); font-size:14px}
+  .watch li:last-child{border-bottom:0}
+  .watch .want{color:var(--muted); font-size:13px}
+  .note-line{font-size:13px; color:var(--muted); line-height:1.6; margin:0}
+  .foot{margin-top:40px; font-size:12px; color:var(--muted); line-height:1.6; text-align:center}
+  @media(prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+</style>
+</head>
+<body>
+  <div class="topbar">
+    <div class="brand"><span class="dot"></span> Portfolio</div>
+    <span id="status" class="status">Sample data</span>
+  </div>
+
+  <div class="wrap">
+    <div id="banner" class="banner">
+      <b>Running on sample data.</b> Connect your own numbers by publishing a Google Sheet and pasting its ID into
+      <b>CONFIG.SHEET_ID</b> near the top of this file's script. Setup steps are in the notes I sent alongside this file.
+    </div>
+
+    <!-- HERO -->
+    <section class="hero">
+      <div class="k">Total value · USD</div>
+      <div class="total" id="total">—<span class="cursor">&nbsp;</span></div>
+      <div class="stats">
+        <div><div class="kk">PHP</div><div class="vv" id="php">—</div></div>
+        <div><div class="kk">Unrealized</div><div class="vv" id="pl">—</div></div>
+        <div><div class="kk">Invested</div><div class="vv" id="invested">—</div></div>
+        <div><div class="kk">FX · PHP/USD</div><div class="vv" id="fx">—</div></div>
+      </div>
+    </section>
+
+    <!-- ALLOCATION -->
+    <div class="eyebrow">Allocation · target vs actual</div>
+    <div id="bays" class="bays grid"></div>
+    <div id="rebalance" class="rebalance"></div>
+
+    <!-- HOLDINGS -->
+    <div class="eyebrow">Holdings</div>
+    <div class="card table-scroll">
+      <table>
+        <thead><tr><th>Asset</th><th>Sleeve</th><th>Value USD</th><th>Value PHP</th><th>P/L</th></tr></thead>
+        <tbody id="holdings"></tbody>
+      </table>
+    </div>
+
+    <!-- GROWTH -->
+    <div class="eyebrow">Growth · value vs money you added</div>
+    <div class="card growth">
+      <svg id="chart" viewBox="0 0 600 190" preserveAspectRatio="none" aria-label="Portfolio value versus contributions over time"></svg>
+      <div class="legend">
+        <span><i style="background:var(--accent)"></i> Portfolio value</span>
+        <span><i style="background:var(--muted)"></i> Contributions</span>
+        <span id="chartnote" class="muted"></span>
+      </div>
+    </div>
+
+    <!-- METRICS -->
+    <div class="eyebrow">Rates &amp; projection</div>
+    <div class="grid cols-3" id="metrics"></div>
+
+    <!-- EXTRAS -->
+    <div class="grid cols-2">
+      <div>
+        <div class="eyebrow">Watchlist</div>
+        <div class="card"><ul id="watch" class="plain watch"></ul></div>
+      </div>
+      <div>
+        <div class="eyebrow">Income &amp; tax notes</div>
+        <div class="card">
+          <p class="note-line">SPYL is Irish-domiciled, so dividends carry the 15% treaty withholding rather than 30% — a quiet compounding edge worth keeping in view.</p>
+        </div>
+      </div>
+    </div>
+
+    <p class="foot" id="foot"></p>
+  </div>
+
+<script>
+/* =====================================================================
+   CONFIG — the only part you edit to go live.
+   1. Build a Google Sheet with four tabs (exact names below).
+   2. Share it: "Anyone with the link · Viewer".
+   3. Copy the long ID from the sheet URL:
+      docs.google.com/spreadsheets/d/THIS_IS_THE_ID/edit
+   4. Paste it as SHEET_ID. Save, redeploy. Done.
+   Leave SHEET_ID empty to keep showing sample data.
+   ===================================================================== */
+const CONFIG = {
+  SHEET_ID: "1fdiBEOjWwP6bb_wYcwoOG6h-Oe4LFoQXXXj9JAnGjTA",  // your Google Sheet
+  TABS: { holdings:"Holdings", snapshots:"Snapshots", watchlist:"Watchlist", config:"Config" }
+};
+
+/* ---- SAMPLE DATA (used until SHEET_ID is set, or if the sheet can't be read) ---- */
+const SAMPLE = {
+  holdings: [
+    { asset:"SPYL",  sleeve:"beta",  units:6.9,   avg_cost:101.4, price:110.1 },
+    { asset:"GOOGL", sleeve:"alpha", units:0.52,  avg_cost:184.6, price:192.3 },
+    { asset:"MSFT",  sleeve:"alpha", units:0.24,  avg_cost:429.0, price:416.5 },
+    { asset:"ETH",   sleeve:"asym",  units:0.024, avg_cost:3958,  price:3750 }
+  ],
+  snapshots: [
+    { date:"2026-01", value:520,  contributions:500,  fx:57.9 },
+    { date:"2026-02", value:absReplace, contributions:0, fx:0 } // placeholder removed below
+  ],
+  watchlist: [
+    { ticker:"AAPL", target_entry:"205.00", note:"waiting for entry" },
+    { ticker:"AMZN", target_entry:"170.00", note:"waiting for entry" }
+  ],
+  config: {
+    target_beta:70, target_alpha:20, target_asym:10,
+    monthly_contribution:150,
+    projection_rate:0.08, projection_years:5, goal_amount:25000, goal_label:"runway"
+  }
+};
+/* clean sample snapshot series (kept separate for readability) */
+SAMPLE.snapshots = [
+  { date:"2026-01", value:520,  contributions:500,  fx:57.9 },
+  { date:"2026-02", value:610,  contributions:620,  fx:58.1 },
+  { date:"2026-03", value:690,  contributions:720,  fx:58.4 },
+  { date:"2026-04", value:770,  contributions:820,  fx:58.2 },
+  { date:"2026-05", value:840,  contributions:900,  fx:58.6 },
+  { date:"2026-06", value:930,  contributions:960,  fx:58.5 },
+  { date:"2026-07", value:1010, contributions:994,  fx:58.5 }
+];
+
+/* ---- tiny CSV parser (handles quotes/commas) ---- */
+function parseCSV(text){
+  const rows=[]; let row=[], cur="", q=false;
+  for(let i=0;i<text.length;i++){
+    const c=text[i];
+    if(q){
+      if(c==='"'){ if(text[i+1]==='"'){cur+='"';i++;} else q=false; } else cur+=c;
+    } else {
+      if(c==='"') q=true;
+      else if(c===","){ row.push(cur); cur=""; }
+      else if(c==="\n"){ row.push(cur); rows.push(row); row=[]; cur=""; }
+      else if(c==="\r"){} else cur+=c;
+    }
+  }
+  if(cur.length||row.length){ row.push(cur); rows.push(row); }
+  return rows.filter(r=>r.some(x=>x!==""));
+}
+function rowsToObjects(rows){
+  if(!rows.length) return [];
+  const head=rows[0].map(h=>h.trim().toLowerCase());
+  return rows.slice(1).map(r=>{ const o={}; head.forEach((h,i)=>o[h]=(r[i]??"").trim()); return o; });
+}
+const sheetURL = (tab)=>`https://docs.google.com/spreadsheets/d/${CONFIG.SHEET_ID}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent(tab)}`;
+async function fetchTab(tab){
+  const res=await fetch(sheetURL(tab));
+  if(!res.ok) throw new Error("fetch failed "+tab);
+  return rowsToObjects(parseCSV(await res.text()));
+}
+
+/* ---- load data (sheet or sample) ---- */
+async function load(){
+  if(!CONFIG.SHEET_ID) return { data:normalizeSample(), live:false };
+  try{
+    const [h,s,w,c]=await Promise.all([
+      fetchTab(CONFIG.TABS.holdings), fetchTab(CONFIG.TABS.snapshots),
+      fetchTab(CONFIG.TABS.watchlist), fetchTab(CONFIG.TABS.config)
+    ]);
+    const cfg={}; c.forEach(r=>{ const k=(r.key||r.setting||"").toLowerCase(); if(k) cfg[k]=r.value; });
+    return { data:{
+      holdings:h.map(r=>({asset:r.asset, sleeve:(r.sleeve||"").toLowerCase(),
+        units:+r.units||0, avg_cost:+r.avg_cost||0, price:+r.price||0})),
+      snapshots:s.map(r=>({date:r.date, value:+r.value||0, contributions:+r.contributions||0, fx:+r.fx||0})),
+      watchlist:w.map(r=>({ticker:r.ticker, target_entry:r.target_entry, note:r.note})),
+      config:cfg
+    }, live:true };
+  }catch(e){ console.warn("Falling back to sample:",e); return { data:normalizeSample(), live:false, error:true }; }
+}
+function normalizeSample(){ return JSON.parse(JSON.stringify(SAMPLE)); }
+
+/* ---- compute ---- */
+const SLEEVES=[
+  {key:"beta",  label:"Beta · core",   cls:"beta",  sub:"SPYL"},
+  {key:"alpha", label:"Alpha · engine",cls:"alpha", sub:"mega-cap"},
+  {key:"asym",  label:"Asym · convex", cls:"asym",  sub:"ETH"}
+];
+function compute(d){
+  const h=d.holdings.map(x=>({...x, value:x.units*x.price, invested:x.units*x.avg_cost}));
+  const total=h.reduce((a,x)=>a+x.value,0);
+  const invested=h.reduce((a,x)=>a+x.invested,0);
+  const snaps=d.snapshots.filter(s=>s.value>0);
+  const fx=(snaps.length?snaps[snaps.length-1].fx:0)|| (d.config.fx?+d.config.fx:0) || 58.5;
+  const cfg=d.config;
+  const targets={beta:+cfg.target_beta||70, alpha:+cfg.target_alpha||20, asym:+cfg.target_asym||10};
+  const sleeves=SLEEVES.map(s=>{
+    const val=h.filter(x=>x.sleeve===s.key).reduce((a,x)=>a+x.value,0);
+    const actual= total? val/total*100 : 0;
+    return {...s, val, actual, target:targets[s.key], drift:actual-targets[s.key]};
+  });
+  const under=sleeves.filter(s=>s.drift<-0.2).sort((a,b)=>a.drift-b.drift).map(s=>s.label.split(" ")[0]);
+  return { h, total, invested, pl:total-invested,
+    plpct: invested? (total-invested)/invested*100 : 0,
+    fx, sleeves, snaps, cfg, under };
+}
+
+/* ---- render helpers ---- */
+const usd=n=>"$"+n.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2});
+const usdShort=n=> n>=1000? "$"+(n/1000).toFixed(1)+"k" : "$"+n.toFixed(0);
+const php=n=>"₱"+Math.round(n).toLocaleString("en-US");
+const sign=n=>(n>=0?"+":"")+n.toFixed(2);
+const pct=n=>(n>=0?"+":"")+n.toFixed(1)+"%";
+
+function render(m,live,error){
+  // status + banner
+  const st=document.getElementById("status");
+  const bn=document.getElementById("banner");
+  if(live){ st.textContent="Live · your sheet"; st.classList.add("live"); bn.classList.add("hidden"); }
+  else { st.textContent="Sample data"; if(error) bn.innerHTML="<b>Couldn't read your sheet.</b> Check that it's shared as \"Anyone with the link · Viewer\" and the tab names match. Showing sample data meanwhile."; }
+
+  // hero
+  document.getElementById("total").innerHTML=usd(m.total)+'<span class="cursor">&nbsp;</span>';
+  document.getElementById("php").textContent=php(m.total*m.fx);
+  const plEl=document.getElementById("pl");
+  plEl.textContent=pct(m.plpct); plEl.className="vv "+(m.plpct>=0?"pos":"neg");
+  document.getElementById("invested").textContent=usd(m.invested);
+  document.getElementById("fx").textContent=m.fx.toFixed(2);
+
+  // bays
+  document.getElementById("bays").innerHTML=m.sleeves.map(s=>`
+    <div class="bay ${s.cls}">
+      <div class="tag">${s.label}</div>
+      <div class="gauge">
+        <div class="gfill" style="height:0"></div>
+        <div class="gtarget" style="bottom:${s.target}%"><span>tgt ${s.target}</span></div>
+      </div>
+      <div class="pct">${s.actual.toFixed(1)}%</div>
+      <div class="sub">${s.sub} · <span class="${s.drift>=0?'muted':'neg'}">${sign(s.drift)}</span></div>
+    </div>`).join("");
+  requestAnimationFrame(()=>document.querySelectorAll("#bays .gfill").forEach((el,i)=>el.style.height=m.sleeves[i].actual+"%"));
+
+  // rebalance
+  const rb=document.getElementById("rebalance");
+  rb.innerHTML = m.under.length
+    ? `&gt; next_buy: bias <b>${m.under.join(" + ")}</b> to converge on ${m.sleeves.map(s=>s.target).join("/")}`
+    : `&gt; on target — no rebalance needed`;
+
+  // holdings
+  document.getElementById("holdings").innerHTML=m.h.map(x=>{
+    const plpct=x.invested?(x.value-x.invested)/x.invested*100:0;
+    const color={beta:"var(--c-beta)",alpha:"var(--c-alpha)",asym:"var(--c-asym)"}[x.sleeve]||"var(--muted)";
+    const sl={beta:"Beta",alpha:"Alpha",asym:"Asym"}[x.sleeve]||x.sleeve;
+    return `<tr>
+      <td class="tkr"><span class="dot-sl" style="background:${color}"></span>${x.asset}</td>
+      <td class="muted">${sl}</td>
+      <td>${usd(x.value)}</td>
+      <td>${php(x.value*m.fx)}</td>
+      <td class="${plpct>=0?'pos':'neg'}">${pct(plpct)}</td>
+    </tr>`;
+  }).join("");
+
+  drawChart(m.snaps);
+
+  // metrics (income-free: contribution · projection · goal)
+  const c=m.cfg;
+  const contrib=+c.monthly_contribution||0;
+  const rate=+c.projection_rate||0.08, years=+c.projection_years||5;
+  const fv=m.total*Math.pow(1+rate,years)+ (contrib? contrib*((Math.pow(1+rate/12,12*years)-1)/(rate/12)) : 0);
+  const goal=+c.goal_amount||0;
+  const goalPct= goal? Math.min(100, m.total/goal*100) : 0;
+  document.getElementById("metrics").innerHTML=`
+    <div class="card metric"><div class="lab">Monthly contribution</div>
+      <div class="big">${contrib? usd(contrib):"—"}</div>
+      <div class="hint">${contrib? "What you add on your cadence." : "Set monthly_contribution in Config."}</div></div>
+    <div class="card metric"><div class="lab">Projected · ${years} yr</div>
+      <div class="big">${usdShort(fv)}</div>
+      <div class="hint">${usd(contrib)}/mo at ${(rate*100).toFixed(0)}%/yr — a scenario, not a forecast.</div></div>
+    <div class="card metric"><div class="lab">Goal · ${c.goal_label||"target"}</div>
+      <div class="big">${goal? goalPct.toFixed(0)+"%":"—"}</div>
+      <div class="hint">${goal? usdShort(m.total)+" of "+usdShort(goal) : "Set goal_amount in Config."}</div></div>`;
+
+  // watchlist
+  document.getElementById("watch").innerHTML=(m.snaps,SLEEVES, (window.__watch||[])).length? "" : "";
+  const wl=(m.__wl)||[];
+  // (watchlist wired below in start())
+
+  // foot
+  document.getElementById("foot").innerHTML=
+    `${live?"Live from your Google Sheet.":"Sample data — connect your sheet to go live."}`;
+}
+
+function drawChart(snaps){
+  const svg=document.getElementById("chart");
+  const note=document.getElementById("chartnote");
+  if(!snaps.length){ svg.innerHTML=""; note.textContent="no snapshots yet"; return; }
+  const W=600,H=190,pad=6;
+  const vals=snaps.map(s=>s.value), cons=snaps.map(s=>s.contributions);
+  const max=Math.max(...vals,...cons)*1.08, min=0;
+  const x=i=> snaps.length===1? W/2 : pad + i*(W-2*pad)/(snaps.length-1);
+  const y=v=> H-pad - (v-min)/(max-min||1)*(H-2*pad);
+  const line=arr=>arr.map((v,i)=>`${i?"L":"M"}${x(i).toFixed(1)},${y(v).toFixed(1)}`).join(" ");
+  const area=line(vals)+` L${x(vals.length-1).toFixed(1)},${H} L${x(0).toFixed(1)},${H} Z`;
+  svg.innerHTML=`
+    <defs><linearGradient id="area" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="var(--accent)" stop-opacity=".28"/>
+      <stop offset="1" stop-color="var(--accent)" stop-opacity="0"/></linearGradient></defs>
+    <path d="${area}" fill="url(#area)"/>
+    <path d="${line(cons)}" fill="none" stroke="var(--muted)" stroke-width="2" stroke-dasharray="5 5"/>
+    <path d="${line(vals)}" fill="none" stroke="var(--accent)" stroke-width="2.5"/>`;
+  note.textContent=`${snaps[0].date} → ${snaps[snaps.length-1].date}`;
+}
+
+/* ---- start ---- */
+(async function start(){
+  const {data,live,error}=await load();
+  const m=compute(data);
+  m.__wl=data.watchlist||[];
+  render(m,live,error);
+  // watchlist render (kept here so it uses freshest data)
+  document.getElementById("watch").innerHTML=(data.watchlist||[]).map(w=>`
+    <li><span class="tkr">${w.ticker||""}</span>
+    <span class="want">${w.target_entry?("wants entry below $"+w.target_entry):(w.note||"")}</span></li>`).join("")
+    || `<li><span class="muted">Add rows to the Watchlist tab.</span></li>`;
+})();
+</script>
+</body>
+</html>
